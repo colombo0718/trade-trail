@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>BTC Trading Env</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+  body {
+    font-family: 'Courier New', monospace;
+    background: #0d1117;
+    color: #c9d1d9;
+    font-size: 13px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 6px 12px;
+    margin-bottom: 8px;
+  }
+  #header .title { color: #f0883e; font-weight: bold; font-size: 14px; }
+  #header .episode-info { color: #8b949e; font-size: 12px; }
+
+  #main-grid {
+    display: grid;
+    grid-template-columns: 1fr 180px;
+    gap: 8px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  #left-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+  }
+
+  .canvas-wrap {
+    position: relative;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    overflow: hidden;
+    min-height: 0;
+  }
+  #chart-wrap  { flex: 2; }
+  #equity-wrap { flex: 1; }
+
+  canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+  }
+
+  #right-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .panel {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 10px;
+  }
+  .panel-title {
+    color: #58a6ff;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #30363d;
+    padding-bottom: 4px;
+  }
+
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 5px;
+    font-size: 12px;
+  }
+  .stat-label { color: #8b949e; }
+  .stat-value { color: #e6edf3; font-weight: bold; }
+  .stat-value.up   { color: #3fb950; }
+  .stat-value.down { color: #f85149; }
+  .stat-value.neu  { color: #d29922; }
+
+  /* 圖表選項 */
+  .chart-toggle { display: flex; gap: 4px; }
+  .chart-btn {
+    flex: 1; padding: 3px 0; font-size: 10px; cursor: pointer;
+    border-radius: 4px; border: 1px solid #30363d;
+    background: #21262d; color: #8b949e;
+  }
+  .chart-btn.on-price  { border-color: #58a6ff; color: #58a6ff; background: #0d1f2e; }
+  .chart-btn.on-pred   { border-color: #f0883e; color: #f0883e; background: #2a1a0a; }
+  .chart-btn.on-candle { border-color: #3fb950; color: #3fb950; background: #0d1f12; }
+
+  /* CNN 狀態燈 */
+  #state-display {
+    text-align: center;
+    padding: 6px 0;
+  }
+  .state-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+    margin-top: 4px;
+  }
+  .sig-up   { background: #1a3a2a; color: #3fb950; border: 1px solid #3fb950; }
+  .sig-down { background: #3a1a1a; color: #f85149; border: 1px solid #f85149; }
+  .sig-neu  { background: #2a2a1a; color: #d29922; border: 1px solid #d29922; }
+
+  /* 持倉格 */
+  #position-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 3px;
+    margin-top: 4px;
+  }
+  .pos-cell {
+    height: 14px;
+    border-radius: 2px;
+    background: #21262d;
+    border: 1px solid #30363d;
+    transition: background 0.2s;
+  }
+  .pos-cell.filled { background: #f0883e; border-color: #f0883e; }
+
+  /* 季度篩選 */
+  .q-row { display: flex; align-items: center; gap: 4px; margin-top: 5px; }
+  .q-year { color: #8b949e; font-size: 10px; width: 28px; flex-shrink: 0; }
+  .q-btns { display: flex; gap: 3px; flex: 1; }
+  .q-btn {
+    flex: 1; padding: 2px 0; font-size: 10px; cursor: pointer;
+    border-radius: 3px; border: 1px solid #30363d;
+    background: #21262d; color: #8b949e;
+  }
+  .q-btn.q-active  { border-color: #58a6ff; color: #58a6ff; background: #0d1f2e; }
+  .q-btn.q-disabled { opacity: 0.3; cursor: not-allowed; }
+
+  /* 進度條 */
+  #progress-bar-wrap {
+    background: #21262d;
+    border-radius: 3px;
+    height: 4px;
+    margin-top: 6px;
+    overflow: hidden;
+  }
+  #progress-bar {
+    height: 100%;
+    background: #58a6ff;
+    transition: width 0.1s;
+    width: 0%;
+  }
+
+  #status-text {
+    text-align: center;
+    font-size: 11px;
+    color: #8b949e;
+    margin-top: 4px;
+  }
+
+  /* 模式切換按鈕 */
+  .mode-btn {
+    width: 100%; padding: 5px; border-radius: 4px;
+    cursor: pointer; font-size: 12px; font-weight: bold;
+    border: 1.5px solid; margin-bottom: 4px;
+  }
+  .mode-train    { background: #1a2e1a; color: #3fb950; border-color: #3fb950; }
+  .mode-validate { background: #1a1a3a; color: #58a6ff; border-color: #58a6ff; }
+  #mode-desc { font-size: 10px; color: #8b949e; text-align: center; }
+
+  /* 市場篩選 */
+  .market-radio { display: flex; gap: 4px; margin-top: 6px; }
+  .market-label {
+    flex: 1; text-align: center;
+    font-size: 11px; color: #8b949e; cursor: pointer;
+    padding: 3px 0; border-radius: 10px;
+    border: 1px solid #30363d; background: #21262d;
+  }
+  .market-label input { display: none; }
+  .active-all  { border-color: #8b949e !important; color: #e6edf3 !important; }
+  .active-bull { background: #1a3a2a !important; border-color: #3fb950 !important; color: #3fb950 !important; }
+  .active-bear { background: #2e1a1a !important; border-color: #f85149 !important; color: #f85149 !important; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <span class="title">📈 BTC Trading Env — RR Platform</span>
+  <span class="episode-info" id="episode-label">Episode: 0 | Step: 0 / 0</span>
+</div>
+
+<div id="main-grid">
+  <!-- 左側 -->
+  <div id="left-panel">
+    <div class="canvas-wrap" id="chart-wrap">
+      <canvas id="chart-canvas"></canvas>
+    </div>
+    <div class="canvas-wrap" id="equity-wrap">
+      <canvas id="equity-canvas"></canvas>
+    </div>
+  </div>
+
+  <!-- 右側 -->
+  <div id="right-panel">
+
+    <!-- 模式切換 -->
+    <div class="panel">
+      <div class="panel-title">Mode</div>
+      <button id="btn-mode" class="mode-btn mode-train">📈 訓練模式</button>
+      <div id="mode-desc">使用 phase=train 資料訓練 Q-table</div>
+    </div>
+
+    <!-- 市場篩選 -->
+    <div class="panel" id="panel-market">
+      <div class="panel-title">Market Filter</div>
+      <div class="market-radio">
+        <label class="market-label active-all" id="lbl-all">
+          <input type="radio" name="market" value="all" checked> 全部
+        </label>
+        <label class="market-label" id="lbl-bull">
+          <input type="radio" name="market" value="bull"> 牛市
+        </label>
+        <label class="market-label" id="lbl-bear">
+          <input type="radio" name="market" value="bear"> 熊市
+        </label>
+      </div>
+      <div id="quarter-grid"></div>
+    </div>
+
+    <!-- 圖表選項 -->
+    <div class="panel">
+      <div class="panel-title">Chart</div>
+      <div class="chart-toggle">
+        <button id="btn-price"  class="chart-btn on-price">Price</button>
+        <button id="btn-pred"   class="chart-btn">Pred</button>
+        <button id="btn-candle" class="chart-btn">K線</button>
+      </div>
+    </div>
+
+    <!-- CNN 狀態 -->
+    <div class="panel">
+      <div class="panel-title">CNN Signal</div>
+      <div id="state-display">
+        <div style="color:#8b949e;font-size:11px;">pred_return_pct</div>
+        <div id="state-badge" class="state-badge sig-neu">0.00%</div>
+      </div>
+    </div>
+
+    <!-- 帳戶資訊 -->
+    <div class="panel">
+      <div class="panel-title">Account</div>
+      <div class="stat-row">
+        <span class="stat-label">BTC 價格</span>
+        <span class="stat-value" id="val-price">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">現金</span>
+        <span class="stat-value" id="val-cash">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">BTC 估值</span>
+        <span class="stat-value" id="val-btc">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">總資產</span>
+        <span class="stat-value" id="val-total">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">報酬率</span>
+        <span class="stat-value" id="val-return">—</span>
+      </div>
+    </div>
+
+    <!-- 持倉 -->
+    <div class="panel">
+      <div class="panel-title">Position (0~10格)</div>
+      <div id="position-grid"></div>
+    </div>
+
+    <!-- 進度 -->
+    <div class="panel">
+      <div class="panel-title">Episode Progress</div>
+      <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+      <div id="status-text">等待 RR 平台連線...</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  BTC Trading Environment — RR Platform 通訊協定
+//
+//  RR → Game:
+//    { type: 'questInfo', sessionId }  → 回傳 gameInfo，觸發 reset
+//    { type: 'action', action: 0|1|2 } → 執行一步
+//    { type: 'pause' }  → toggle 暫停
+//
+//  Game → RR:
+//    { type: 'gameInfo', players: [{ stateInfo, actionInfo }] }
+//    { type: 'reward_state', reward, state, done, sessionId }
+// ═══════════════════════════════════════════════════════
+
+// ── 常數 ──────────────────────────────────────────────
+const INITIAL_CAPITAL = 10000;
+const MAX_POSITION    = 10;
+const UNIT_FRACTION   = 1 / MAX_POSITION;
+const FEE_RATE        = 0.001;
+const CNN_MIN         = -1.5;
+const CNN_MAX         =  1.5;
+
+// ── 環境狀態 ───────────────────────────────────────────
+let statesData       = [];
+let activeData       = [];   // 當前使用的資料段（依模式+市場篩選）
+let currentMode      = 'train';   // 'train' | 'validate'
+let currentMarket    = 'all';     // 'all' | 'bull' | 'bear'
+let selectedQuarters = new Set(); // e.g. "2024-Q2", "2025-Q3"; empty = no filter
+
+let chartOpts = { priceLine: true, predLine: false, candles: false };
+
+let currentStep   = 0;
+let cash          = INITIAL_CAPITAL;
+let btcHeld       = 0;
+let position      = 0;
+let prevTotal     = INITIAL_CAPITAL;
+let episodeCount  = 0;
+let equityHistory = [];
+let priceHistory  = [];
+let ohlcHistory   = [];   // { o, h, l, c } per step
+let predHistory   = [];   // CNN predicted price for next step
+let actionHistory = [];
+let envReady      = false;
+let currentSessionId = null;
+let isPaused      = false;
+
+// ── DOM ────────────────────────────────────────────────
+const chartCanvas  = document.getElementById('chart-canvas');
+const equityCanvas = document.getElementById('equity-canvas');
+const chartCtx     = chartCanvas.getContext('2d');
+const equityCtx    = equityCanvas.getContext('2d');
+
+const posGrid = document.getElementById('position-grid');
+for (let i = 0; i < MAX_POSITION; i++) {
+  const cell = document.createElement('div');
+  cell.className = 'pos-cell';
+  cell.id = `pos-${i}`;
+  posGrid.appendChild(cell);
+}
+
+// ── 季度工具 ──────────────────────────────────────────
+function getQKey(dateStr) {
+  const d = new Date(dateStr);
+  return `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
+}
+
+function buildQuarterGrid() {
+  const trainData = statesData.filter(d => d.phase === 'train' && d.date);
+  const available = new Set(trainData.map(d => getQKey(d.date)));
+  const years = [...new Set([...available].map(k => k.split('-')[0]))].sort();
+
+  const container = document.getElementById('quarter-grid');
+  container.innerHTML = '';
+
+  years.forEach(yr => {
+    const row = document.createElement('div');
+    row.className = 'q-row';
+
+    const lbl = document.createElement('span');
+    lbl.className = 'q-year';
+    lbl.textContent = yr;
+    row.appendChild(lbl);
+
+    const btns = document.createElement('div');
+    btns.className = 'q-btns';
+    for (let q = 1; q <= 4; q++) {
+      const key = `${yr}-Q${q}`;
+      const btn = document.createElement('button');
+      btn.className = available.has(key) ? 'q-btn' : 'q-btn q-disabled';
+      btn.textContent = `Q${q}`;
+      btn.dataset.key = key;
+      btn.disabled = !available.has(key);
+      if (available.has(key)) {
+        btn.addEventListener('click', () => toggleQuarter(key, btn));
+      }
+      btns.appendChild(btn);
+    }
+    row.appendChild(btns);
+    container.appendChild(row);
+  });
+}
+
+function toggleQuarter(key, btn) {
+  if (selectedQuarters.has(key)) {
+    selectedQuarters.delete(key);
+    btn.classList.remove('q-active');
+  } else {
+    selectedQuarters.add(key);
+    btn.classList.add('q-active');
+  }
+  buildActiveData();
+  if (envReady) resetEnv();
+}
+
+// ── 資料篩選 ──────────────────────────────────────────
+function buildActiveData() {
+  if (currentMode === 'train') {
+    activeData = statesData.filter(d => {
+      if (d.phase !== 'train') return false;
+      if (currentMarket === 'bull' && d.market !== 'bull') return false;
+      if (currentMarket === 'bear' && d.market !== 'bear') return false;
+      if (selectedQuarters.size > 0 && !selectedQuarters.has(getQKey(d.date))) return false;
+      return true;
+    });
+  } else {
+    activeData = statesData.filter(d => d.phase === 'test');
+  }
+}
+
+// ── 載入 btc_states.json ───────────────────────────────
+async function loadData() {
+  try {
+    const res  = await fetch('btc_states.json');
+    const json = await res.json();
+    statesData = json.data;
+    buildQuarterGrid();
+    buildActiveData();
+    const trainCount = statesData.filter(d => d.phase === 'train').length;
+    const testCount  = statesData.filter(d => d.phase === 'test').length;
+    setStatus(`資料載入完成：train=${trainCount} / test=${testCount}，等待 RR 連線...`);
+    envReady = true;
+  } catch (e) {
+    setStatus('⚠ 找不到 btc_states.json，使用 Demo 資料');
+    console.warn(e);
+    useDemoData();
+  }
+}
+
+function sendGameInfo() {
+  sendToRR({
+    type: 'gameInfo',
+    players: [{
+      stateInfo: [
+        { name: 'CNN信號', min: CNN_MIN, max: CNN_MAX },
+        { name: '持倉格數', min: 0, max: MAX_POSITION },
+      ],
+      actionInfo: [{
+        type: 'switch',
+        name: ['買入', '持有', '賣出'],
+        level: 3,
+      }],
+    }],
+  });
+}
+
+function useDemoData() {
+  statesData = Array.from({ length: 300 }, (_, i) => ({
+    step:            i,
+    date:            '',
+    price:           90000 + Math.sin(i / 20) * 5000 + (Math.random() - 0.5) * 2000,
+    pred_return_pct: (Math.random() - 0.5) * 3,
+    phase:           'train',
+    market:          Math.random() > 0.5 ? 'bull' : 'bear',
+  }));
+  buildActiveData();
+  envReady = true;
+  setStatus(`[Demo] ${statesData.length} 步，等待 RR 連線...`);
+}
+
+// ── 環境核心函數 ───────────────────────────────────────
+
+function getStateVector() {
+  const row = activeData[Math.min(currentStep, activeData.length - 1)];
+  const raw = row ? row.pred_return_pct : 0;
+  const cnnSignal = Math.max(CNN_MIN, Math.min(CNN_MAX, raw));
+  return [cnnSignal, position];
+}
+
+function getTotal(price) {
+  return cash + btcHeld * price;
+}
+
+function resetEnv() {
+  currentStep   = 0;
+  cash          = INITIAL_CAPITAL;
+  btcHeld       = 0;
+  position      = 0;
+  prevTotal     = INITIAL_CAPITAL;
+  equityHistory = [INITIAL_CAPITAL];
+  priceHistory  = [];
+  ohlcHistory   = [];
+  predHistory   = [];
+  actionHistory = [];
+  episodeCount++;
+
+  updateUI();
+
+  sendToRR({
+    type:      'reward_state',
+    reward:    0,
+    state:     getStateVector(),
+    done:      false,
+    sessionId: currentSessionId,
+  });
+}
+
+function step(action) {
+  if (!envReady) return;
+  if (currentStep >= activeData.length) {
+    resetEnv();
+    return;
+  }
+
+  const row   = activeData[currentStep];
+  const price = row.price;
+  priceHistory.push(price);
+  ohlcHistory.push({ o: row.open ?? price, h: row.high ?? price, l: row.low ?? price, c: price });
+  predHistory.push(price * (1 + (row.pred_return_pct ?? 0) / 100));
+
+  let reward = 0;
+
+  if (action === 0) {
+    if (position < MAX_POSITION) {
+      const spend = INITIAL_CAPITAL * UNIT_FRACTION;
+      if (cash >= spend) {
+        const fee       = spend * FEE_RATE;
+        const boughtBTC = (spend - fee) / price;
+        cash    -= spend;
+        btcHeld += boughtBTC;
+        position++;
+        actionHistory.push({ step: currentStep, action: 0, price });
+      }
+    }
+  } else if (action === 2) {
+    if (position > 0) {
+      const sellBTC  = btcHeld / position;
+      const gross    = sellBTC * price;
+      const fee      = gross * FEE_RATE;
+      const proceeds = gross - fee;
+      btcHeld  -= sellBTC;
+      cash     += proceeds;
+      position--;
+      actionHistory.push({ step: currentStep, action: 2, price });
+    }
+  }
+
+  currentStep++;
+  const done = currentStep >= activeData.length;
+
+  const curTotal = getTotal(price);
+  if (reward === 0) {
+    reward = curTotal - prevTotal;
+  }
+
+  if (done) {
+    const finalReturn = (curTotal - INITIAL_CAPITAL) / INITIAL_CAPITAL;
+    setStatus(`Ep ${episodeCount} 結束 | 報酬率 ${(finalReturn * 100).toFixed(2)}%`);
+  }
+
+  prevTotal = curTotal;
+  equityHistory.push(curTotal);
+
+  updateUI(price, curTotal);
+
+  sendToRR({
+    type:      'reward_state',
+    reward:    reward,
+    state:     getStateVector(),
+    done:      done,
+    sessionId: currentSessionId,
+  });
+}
+
+// ── postMessage 通訊 ───────────────────────────────────
+
+function sendToRR(payload) {
+  window.parent.postMessage(payload, '*');
+}
+
+window.addEventListener('message', (e) => {
+  const msg = e.data;
+  if (!msg || !msg.type) return;
+
+  if (msg.type === 'questInfo') {
+    currentSessionId = msg.sessionId;
+    sendGameInfo();
+    requestAnimationFrame(() => resetEnv());
+    setStatus('▶ 訓練中...');
+  } else if (msg.type === 'action') {
+    if (!isPaused) step(msg.action);
+  } else if (msg.type === 'pause') {
+    isPaused = !isPaused;
+    setStatus(isPaused ? '⏸ 暫停中' : '▶ 訓練中...');
+  }
+});
+
+// ── UI 更新 ────────────────────────────────────────────
+
+function updateUI(price, total) {
+  const p   = price ?? activeData[0]?.price ?? 0;
+  const tot = total ?? INITIAL_CAPITAL;
+  const ret = (tot - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100;
+
+  // episode label
+  const modeLabel   = currentMode === 'train'
+    ? `訓練${currentMarket === 'all' ? '' : currentMarket === 'bull' ? '(牛)' : '(熊)'}`
+    : '驗證';
+  document.getElementById('episode-label').textContent =
+    `${modeLabel} | Ep: ${episodeCount} | Step: ${currentStep} / ${activeData.length}`;
+
+  // CNN 信號（連續值）
+  const curRow = activeData[Math.min(currentStep, activeData.length - 1)];
+  const raw    = curRow ? curRow.pred_return_pct : 0;
+  const clamped = Math.max(CNN_MIN, Math.min(CNN_MAX, raw));
+  const badge   = document.getElementById('state-badge');
+  badge.textContent = `${clamped >= 0 ? '+' : ''}${clamped.toFixed(3)}%`;
+  badge.className   = `state-badge ${clamped > 0.3 ? 'sig-up' : clamped < -0.3 ? 'sig-down' : 'sig-neu'}`;
+
+  // 帳戶
+  document.getElementById('val-price').textContent  = `$${p.toLocaleString('en', {maximumFractionDigits: 0})}`;
+  document.getElementById('val-cash').textContent   = `$${cash.toFixed(0)}`;
+  document.getElementById('val-btc').textContent    = `$${(btcHeld * p).toFixed(0)}`;
+  document.getElementById('val-total').textContent  = `$${tot.toFixed(0)}`;
+
+  const retEl = document.getElementById('val-return');
+  retEl.textContent = `${ret >= 0 ? '+' : ''}${ret.toFixed(2)}%`;
+  retEl.className   = `stat-value ${ret > 0 ? 'up' : ret < 0 ? 'down' : 'neu'}`;
+
+  // 持倉格
+  for (let i = 0; i < MAX_POSITION; i++) {
+    document.getElementById(`pos-${i}`).className =
+      `pos-cell ${i < position ? 'filled' : ''}`;
+  }
+
+  // 進度條
+  const pct = activeData.length > 0 ? (currentStep / activeData.length * 100) : 0;
+  document.getElementById('progress-bar').style.width = `${pct}%`;
+
+  drawChart();
+  drawEquity();
+}
+
+function setStatus(msg) {
+  document.getElementById('status-text').textContent = msg;
+}
+
+// ── Canvas 繪圖 ────────────────────────────────────────
+
+function resizeCanvas(canvas) {
+  const wrap = canvas.parentElement;
+  const W = wrap.clientWidth  || 300;
+  const H = wrap.clientHeight || 200;
+  if (canvas.width !== W || canvas.height !== H) {
+    canvas.width  = W;
+    canvas.height = H;
+  }
+}
+
+function drawChart() {
+  resizeCanvas(chartCanvas);
+  const ctx = chartCtx;
+  const W = chartCanvas.width, H = chartCanvas.height;
+  const PAD = { t: 20, r: 10, b: 20, l: 60 };
+
+  ctx.clearRect(0, 0, W, H);
+
+  const SHOW = 80;
+  const showPrice  = chartOpts.priceLine && priceHistory.length >= 2;
+  const showPred   = chartOpts.predLine  && predHistory.length  >= 2;
+  const showCandle = chartOpts.candles   && ohlcHistory.length  >= 2;
+  if (!showPrice && !showPred && !showCandle) return;
+
+  const recentPrice  = priceHistory.slice(-SHOW);
+  const recentPred   = predHistory.slice(-SHOW);
+  const recentOhlc   = ohlcHistory.slice(-SHOW);
+  const N = Math.max(recentPrice.length, recentOhlc.length);
+  const offset = priceHistory.length > SHOW ? priceHistory.length - SHOW : 0;
+
+  // 計算價格範圍
+  let allP = [];
+  if (showPrice)  allP = allP.concat(recentPrice);
+  if (showPred)   allP = allP.concat(recentPred);
+  if (showCandle) recentOhlc.forEach(c => allP.push(c.h, c.l));
+  if (allP.length < 2) return;
+
+  const minP  = Math.min(...allP) * 0.999;
+  const maxP  = Math.max(...allP) * 1.001;
+  const scaleX = (W - PAD.l - PAD.r) / Math.max(N - 1, 1);
+  const scaleY = (H - PAD.t - PAD.b) / (maxP - minP);
+
+  const px = (i) => PAD.l + i * scaleX;
+  const py = (p) => H - PAD.b - (p - minP) * scaleY;
+
+  // 格線
+  ctx.strokeStyle = '#21262d';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = PAD.t + (H - PAD.t - PAD.b) / 4 * i;
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W - PAD.r, y); ctx.stroke();
+    const val = maxP - (maxP - minP) / 4 * i;
+    ctx.fillStyle = '#8b949e';
+    ctx.font = '10px Courier New';
+    ctx.textAlign = 'right';
+    ctx.fillText(`$${Math.round(val / 1000)}K`, PAD.l - 4, y + 4);
+  }
+
+  // K 線蠟燭圖（台灣：漲紅跌綠）
+  if (showCandle) {
+    const cw = Math.max(scaleX * 0.6, 1.5);
+    recentOhlc.forEach((c, i) => {
+      const isUp  = c.c >= c.o;
+      const color = isUp ? '#f85149' : '#3fb950';
+      ctx.strokeStyle = color;
+      ctx.fillStyle   = color;
+      ctx.lineWidth   = 1;
+      // 燭芯
+      ctx.beginPath();
+      ctx.moveTo(px(i), py(c.h));
+      ctx.lineTo(px(i), py(c.l));
+      ctx.stroke();
+      // 實體
+      const top = py(Math.max(c.o, c.c));
+      const bot = py(Math.min(c.o, c.c));
+      const bodyH = Math.max(bot - top, 1);
+      ctx.fillRect(px(i) - cw / 2, top, cw, bodyH);
+    });
+  }
+
+  // 真實收盤價藍線
+  if (showPrice) {
+    ctx.beginPath();
+    ctx.strokeStyle = '#58a6ff';
+    ctx.lineWidth = 1.5;
+    recentPrice.forEach((p, i) => i === 0 ? ctx.moveTo(px(i), py(p)) : ctx.lineTo(px(i), py(p)));
+    ctx.stroke();
+  }
+
+  // CNN 預測線（橘色虛線）
+  if (showPred) {
+    ctx.beginPath();
+    ctx.strokeStyle = '#f0883e';
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([4, 3]);
+    recentPred.forEach((p, i) => i === 0 ? ctx.moveTo(px(i), py(p)) : ctx.lineTo(px(i), py(p)));
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // 買賣標記
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'center';
+  actionHistory.forEach(({ step, action }) => {
+    const li = step - offset;
+    if (li < 0 || li >= N) return;
+    const baseY = recentPrice[li] ? py(recentPrice[li]) : py(recentOhlc[li]?.c ?? 0);
+    if (action === 0) { ctx.fillStyle = '#3fb950'; ctx.fillText('▲', px(li), baseY + 14); }
+    else if (action === 2) { ctx.fillStyle = '#f85149'; ctx.fillText('▼', px(li), baseY - 5); }
+  });
+
+  // 標題
+  const labels = [];
+  if (showCandle) labels.push('K線');
+  if (showPrice)  labels.push('Price');
+  if (showPred)   labels.push('Pred');
+  ctx.fillStyle = '#8b949e';
+  ctx.font = '11px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText(`BTC  ${labels.join(' + ')}  (最近 ${SHOW} 步)`, PAD.l, 14);
+}
+
+function drawEquity() {
+  resizeCanvas(equityCanvas);
+  const ctx = equityCtx;
+  const W = equityCanvas.width, H = equityCanvas.height;
+  const PAD = { t: 16, r: 10, b: 16, l: 60 };
+
+  ctx.clearRect(0, 0, W, H);
+
+  const eq = equityHistory;
+  if (eq.length < 2) return;
+
+  const minE = Math.min(...eq, INITIAL_CAPITAL) * 0.998;
+  const maxE = Math.max(...eq, INITIAL_CAPITAL) * 1.002;
+  const scaleX = (W - PAD.l - PAD.r) / (eq.length - 1);
+  const scaleY = (H - PAD.t - PAD.b) / (maxE - minE);
+
+  const px = (i) => PAD.l + i * scaleX;
+  const py = (v) => H - PAD.b - (v - minE) * scaleY;
+
+  const baseY = py(INITIAL_CAPITAL);
+  ctx.strokeStyle = '#30363d';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(PAD.l, baseY); ctx.lineTo(W - PAD.r, baseY); ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = '#8b949e';
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'right';
+  ctx.fillText(`$${(INITIAL_CAPITAL / 1000).toFixed(0)}K`, PAD.l - 4, baseY + 4);
+
+  const grad = ctx.createLinearGradient(0, PAD.t, 0, H - PAD.b);
+  const lastVal = eq[eq.length - 1];
+  const color   = lastVal >= INITIAL_CAPITAL ? '#3fb950' : '#f85149';
+  grad.addColorStop(0, color + '44');
+  grad.addColorStop(1, color + '00');
+
+  ctx.beginPath();
+  eq.forEach((v, i) => i === 0 ? ctx.moveTo(px(i), py(v)) : ctx.lineTo(px(i), py(v)));
+  ctx.lineTo(px(eq.length - 1), H - PAD.b);
+  ctx.lineTo(px(0), H - PAD.b);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  eq.forEach((v, i) => i === 0 ? ctx.moveTo(px(i), py(v)) : ctx.lineTo(px(i), py(v)));
+  ctx.stroke();
+
+  const ret = (lastVal - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100;
+  ctx.fillStyle = '#8b949e';
+  ctx.font = '11px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText(`Equity  ${ret >= 0 ? '+' : ''}${ret.toFixed(2)}%`, PAD.l, 12);
+}
+
+// ── 視窗 resize ────────────────────────────────────────
+window.addEventListener('resize', () => { drawChart(); drawEquity(); });
+
+// ── 模式切換 ──────────────────────────────────────────
+document.getElementById('btn-mode').addEventListener('click', () => {
+  currentMode = currentMode === 'train' ? 'validate' : 'train';
+  const btn         = document.getElementById('btn-mode');
+  const desc        = document.getElementById('mode-desc');
+  const marketPanel = document.getElementById('panel-market');
+
+  if (currentMode === 'train') {
+    btn.textContent   = '📈 訓練模式';
+    btn.className     = 'mode-btn mode-train';
+    desc.textContent  = '使用 phase=train 資料訓練 Q-table';
+    marketPanel.style.display = '';
+  } else {
+    btn.textContent   = '✅ 驗證模式';
+    btn.className     = 'mode-btn mode-validate';
+    desc.textContent  = '使用 phase=test 驗收策略績效';
+    marketPanel.style.display = 'none';
+  }
+
+  buildActiveData();
+  if (envReady) resetEnv();
+});
+
+// ── 市場篩選 ──────────────────────────────────────────
+document.querySelectorAll('input[name="market"]').forEach(radio => {
+  radio.addEventListener('change', (e) => {
+    currentMarket = e.target.value;
+    ['all', 'bull', 'bear'].forEach(v => {
+      const lbl = document.getElementById(`lbl-${v}`);
+      lbl.className = `market-label${currentMarket === v ? ` active-${v}` : ''}`;
+    });
+    buildActiveData();
+    if (envReady) resetEnv();
+  });
+});
+
+// ── 圖表切換 ──────────────────────────────────────────
+const chartBtnCfg = [
+  { id: 'btn-price',  key: 'priceLine', cls: 'on-price'  },
+  { id: 'btn-pred',   key: 'predLine',  cls: 'on-pred'   },
+  { id: 'btn-candle', key: 'candles',   cls: 'on-candle' },
+];
+chartBtnCfg.forEach(({ id, key, cls }) => {
+  document.getElementById(id).addEventListener('click', () => {
+    chartOpts[key] = !chartOpts[key];
+    const btn = document.getElementById(id);
+    btn.className = `chart-btn${chartOpts[key] ? ' ' + cls : ''}`;
+    drawChart();
+  });
+});
+
+// ── 啟動 ──────────────────────────────────────────────
+loadData();
+</script>
+</body>
+</html>
