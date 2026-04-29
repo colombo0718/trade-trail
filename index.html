@@ -196,6 +196,33 @@
   .state-val { color: #e6edf3; font-weight: bold; font-size: 12px; min-width: 44px; text-align: right; }
   .state-val.dimmed { opacity: 0.35; }
 
+  /* 折疊面板 */
+  details.panel > summary {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0;
+    padding-bottom: 4px;
+  }
+  details.panel > summary::-webkit-details-marker { display: none; }
+  details.panel > summary::after {
+    content: '▸';
+    color: #30363d;
+    font-size: 10px;
+    transition: transform 0.15s;
+    font-weight: normal;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  details.panel[open] > summary {
+    border-bottom: 1px solid #30363d;
+    margin-bottom: 8px;
+  }
+  details.panel[open] > summary::after { transform: rotate(90deg); }
+
   /* 進度條 */
   #progress-bar-wrap {
     background: #21262d;
@@ -276,15 +303,15 @@
     </div>
 
     <!-- 模式切換 -->
-    <div class="panel">
-      <div class="panel-title">Mode</div>
+    <details class="panel" open>
+      <summary class="panel-title">Mode</summary>
       <button id="btn-mode" class="mode-btn mode-train">📈 訓練模式</button>
       <div id="mode-desc">使用 phase=train 資料訓練 Q-table</div>
-    </div>
+    </details>
 
     <!-- 市場篩選 -->
-    <div class="panel" id="panel-market">
-      <div class="panel-title">Market Filter</div>
+    <details class="panel" id="panel-market" open>
+      <summary class="panel-title">Market Filter</summary>
       <div class="market-radio">
         <label class="market-label active-all" id="lbl-all">
           <input type="radio" name="market" value="all" checked> 全部
@@ -297,16 +324,16 @@
         </label>
       </div>
       <div id="year-grid"></div>
-    </div>
+    </details>
 
     <!-- 圖表選項 -->
-    <div class="panel">
-      <div class="panel-title">Chart</div>
+    <details class="panel">
+      <summary class="panel-title">Chart</summary>
       <div class="chart-toggle">
         <button id="btn-price"  class="chart-btn on-price">Price</button>
         <button id="btn-candle" class="chart-btn">K線</button>
       </div>
-    </div>
+    </details>
 
     <!-- State 配置 -->
     <div class="panel">
@@ -925,26 +952,32 @@ function drawChart() {
     else if (action === 2) { ctx.fillStyle = '#f85149'; ctx.fillText('▼', px(li), baseY - 5); }
   });
 
-  // X 軸日期標籤（5 個等距）
-  ctx.fillStyle = '#8b949e';
+  // X 軸月初刻度（每當月份邊界出現就畫）
   ctx.font = '9px Courier New';
   ctx.textAlign = 'center';
-  const tickCount = 5;
-  for (let t = 0; t < tickCount; t++) {
-    const i   = Math.round(t / (tickCount - 1) * (N - 1));
+  let prevMonth = null;
+  for (let i = 0; i < N; i++) {
     const row = activeData[offset + i];
     if (!row?.date) continue;
-    const d   = new Date(row.date);
-    const lbl = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const d = new Date(row.date);
+    const mo = d.getMonth();
+    const yr = d.getFullYear();
+    const key = `${yr}-${mo}`;
+    if (key === prevMonth) continue;
+    prevMonth = key;
+    const x = px(i);
     // 刻度線
     ctx.strokeStyle = '#30363d';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(px(i), H - PAD.b);
-    ctx.lineTo(px(i), H - PAD.b + 4);
+    ctx.moveTo(x, H - PAD.b);
+    ctx.lineTo(x, H - PAD.b + 4);
     ctx.stroke();
-    // 文字
-    ctx.fillText(lbl, px(i), H - PAD.b + 13);
+    // 文字（左邊太窄就靠左，右邊太窄就靠右）
+    const lbl = `${yr}/${String(mo + 1).padStart(2, '0')}`;
+    ctx.fillStyle = '#8b949e';
+    ctx.textAlign = x < PAD.l + 20 ? 'left' : x > W - PAD.r - 20 ? 'right' : 'center';
+    ctx.fillText(lbl, x, H - PAD.b + 13);
   }
 
   // 標題
@@ -1008,24 +1041,25 @@ function drawEquity() {
   eq.forEach((v, i) => i === 0 ? ctx.moveTo(px(i), py(v)) : ctx.lineTo(px(i), py(v)));
   ctx.stroke();
 
-  // X 軸日期標籤（4 個等距，對應 activeData 起訖）
-  ctx.fillStyle = '#8b949e';
+  // X 軸年份刻度（每當年份邊界出現就畫）
   ctx.font = '9px Courier New';
-  ctx.textAlign = 'center';
-  const eqTicks = 4;
-  for (let t = 0; t < eqTicks; t++) {
-    const i   = Math.round(t / (eqTicks - 1) * (eq.length - 1));
+  let prevYear = null;
+  for (let i = 0; i < eq.length; i++) {
     const row = activeData[i];
     if (!row?.date) continue;
-    const d   = new Date(row.date);
-    const lbl = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const yr = new Date(row.date).getFullYear();
+    if (yr === prevYear) continue;
+    prevYear = yr;
+    const x = px(i);
     ctx.strokeStyle = '#30363d';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(px(i), H - PAD.b);
-    ctx.lineTo(px(i), H - PAD.b + 4);
+    ctx.moveTo(x, H - PAD.b);
+    ctx.lineTo(x, H - PAD.b + 4);
     ctx.stroke();
-    ctx.fillText(lbl, px(i), H - PAD.b + 13);
+    ctx.fillStyle = '#8b949e';
+    ctx.textAlign = x < PAD.l + 16 ? 'left' : x > W - PAD.r - 16 ? 'right' : 'center';
+    ctx.fillText(String(yr), x, H - PAD.b + 13);
   }
 
   const ret = (lastVal - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100;
@@ -1049,12 +1083,12 @@ document.getElementById('btn-mode').addEventListener('click', () => {
     btn.textContent   = '📈 訓練模式';
     btn.className     = 'mode-btn mode-train';
     desc.textContent  = '使用 phase=train 資料訓練 Q-table';
-    marketPanel.style.display = '';
+    marketPanel.open = true;
   } else {
     btn.textContent   = '✅ 驗證模式';
     btn.className     = 'mode-btn mode-validate';
     desc.textContent  = '使用 phase=test 驗收策略績效';
-    marketPanel.style.display = 'none';
+    marketPanel.open = false;
   }
 
   buildActiveData();
