@@ -1,0 +1,15 @@
+# 舊格式 BTC 資料（已由 data/btc_usd.json 取代）
+btc_states.json
+
+# BTC 暫緩，先不上傳
+data/btc_usd.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 系統
+.DS_Store
+Thumbs.db

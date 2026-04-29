@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<title>BTC Trading Env</title>
+<title>TradeTrail</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body {
@@ -207,7 +207,7 @@
 <body>
 
 <div id="header">
-  <span class="title">📈 BTC Trading Env — RR Platform</span>
+  <span class="title">📈 TradeTrail — RR Platform</span>
   <span class="episode-info" id="episode-label">Episode: 0 | Step: 0 / 0</span>
 </div>
 
@@ -224,6 +224,18 @@
 
   <!-- 右側 -->
   <div id="right-panel">
+
+    <!-- 標的選擇 -->
+    <div class="panel">
+      <div class="panel-title">Symbol</div>
+      <div class="chart-toggle" id="symbol-btns">
+        <button class="chart-btn on-price" data-sym="SPY">SPY</button>
+        <button class="chart-btn" data-sym="QQQ">QQQ</button>
+        <button class="chart-btn" data-sym="AAPL">AAPL</button>
+        <button class="chart-btn" data-sym="NVDA">NVDA</button>
+        <button class="chart-btn" data-sym="TSLA">TSLA</button>
+      </div>
+    </div>
 
     <!-- 模式切換 -->
     <div class="panel">
@@ -254,17 +266,20 @@
       <div class="panel-title">Chart</div>
       <div class="chart-toggle">
         <button id="btn-price"  class="chart-btn on-price">Price</button>
-        <button id="btn-pred"   class="chart-btn">Pred</button>
         <button id="btn-candle" class="chart-btn">K線</button>
       </div>
     </div>
 
-    <!-- CNN 狀態 -->
+    <!-- State 指標 -->
     <div class="panel">
-      <div class="panel-title">CNN Signal</div>
-      <div id="state-display">
-        <div style="color:#8b949e;font-size:11px;">pred_return_pct</div>
-        <div id="state-badge" class="state-badge sig-neu">0.00%</div>
+      <div class="panel-title">State</div>
+      <div class="stat-row">
+        <span class="stat-label">RSI</span>
+        <span class="stat-value" id="val-rsi">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">MACD</span>
+        <span class="stat-value" id="val-macd">—</span>
       </div>
     </div>
 
@@ -272,7 +287,7 @@
     <div class="panel">
       <div class="panel-title">Account</div>
       <div class="stat-row">
-        <span class="stat-label">BTC 價格</span>
+        <span class="stat-label">價格</span>
         <span class="stat-value" id="val-price">—</span>
       </div>
       <div class="stat-row">
@@ -280,7 +295,7 @@
         <span class="stat-value" id="val-cash">—</span>
       </div>
       <div class="stat-row">
-        <span class="stat-label">BTC 估值</span>
+        <span class="stat-label">持股估值</span>
         <span class="stat-value" id="val-btc">—</span>
       </div>
       <div class="stat-row">
@@ -328,8 +343,7 @@ const INITIAL_CAPITAL = 10000;
 const MAX_POSITION    = 10;
 const UNIT_FRACTION   = 1 / MAX_POSITION;
 const FEE_RATE        = 0.001;
-const CNN_MIN         = -1.5;
-const CNN_MAX         =  1.5;
+const SYMBOLS         = ['SPY', 'QQQ', 'AAPL', 'NVDA', 'TSLA'];
 
 // ── 環境狀態 ───────────────────────────────────────────
 let statesData       = [];
@@ -338,7 +352,10 @@ let currentMode      = 'train';   // 'train' | 'validate'
 let currentMarket    = 'all';     // 'all' | 'bull' | 'bear'
 let selectedQuarters = new Set(); // e.g. "2024-Q2", "2025-Q3"; empty = no filter
 
-let chartOpts = { priceLine: true, predLine: false, candles: false };
+let currentSymbol = 'SPY';
+let isAccel       = false;
+
+let chartOpts = { priceLine: true, candles: false };
 
 let currentStep   = 0;
 let cash          = INITIAL_CAPITAL;
@@ -441,7 +458,7 @@ function buildActiveData() {
 // ── 載入 btc_states.json ───────────────────────────────
 async function loadData() {
   try {
-    const res  = await fetch('btc_states.json');
+    const res  = await fetch(`data/${currentSymbol.toLowerCase()}.json`);
     const json = await res.json();
     statesData = json.data;
     buildQuarterGrid();
@@ -462,8 +479,8 @@ function sendGameInfo() {
     type: 'gameInfo',
     players: [{
       stateInfo: [
-        { name: 'CNN信號', min: CNN_MIN, max: CNN_MAX },
-        { name: '持倉格數', min: 0, max: MAX_POSITION },
+        { name: 'RSI', min: 0, max: 100, bin: 10 },
+        { name: '持倉格數', min: 0, max: MAX_POSITION, bin: MAX_POSITION },
       ],
       actionInfo: [{
         type: 'switch',
@@ -492,9 +509,8 @@ function useDemoData() {
 
 function getStateVector() {
   const row = activeData[Math.min(currentStep, activeData.length - 1)];
-  const raw = row ? row.pred_return_pct : 0;
-  const cnnSignal = Math.max(CNN_MIN, Math.min(CNN_MAX, raw));
-  return [cnnSignal, position];
+  const rsi = row ? Math.max(0, Math.min(100, row.rsi ?? 50)) : 50;
+  return [rsi, position];
 }
 
 function getTotal(price) {
@@ -528,6 +544,10 @@ function resetEnv() {
 function step(action) {
   if (!envReady) return;
   if (currentStep >= activeData.length) {
+    if (activeData.length === 0) {
+      setStatus('⚠ 無資料，請調整篩選條件');
+      return;
+    }
     resetEnv();
     return;
   }
@@ -536,7 +556,6 @@ function step(action) {
   const price = row.price;
   priceHistory.push(price);
   ohlcHistory.push({ o: row.open ?? price, h: row.high ?? price, l: row.low ?? price, c: price });
-  predHistory.push(price * (1 + (row.pred_return_pct ?? 0) / 100));
 
   let reward = 0;
 
@@ -605,13 +624,15 @@ window.addEventListener('message', (e) => {
   if (msg.type === 'questInfo') {
     currentSessionId = msg.sessionId;
     sendGameInfo();
-    requestAnimationFrame(() => resetEnv());
+    dataReady.then(() => resetEnv());
     setStatus('▶ 訓練中...');
   } else if (msg.type === 'action') {
     if (!isPaused) step(msg.action);
   } else if (msg.type === 'pause') {
     isPaused = !isPaused;
     setStatus(isPaused ? '⏸ 暫停中' : '▶ 訓練中...');
+  } else if (msg.type === 'accel') {
+    isAccel = !isAccel;
   }
 });
 
@@ -629,13 +650,16 @@ function updateUI(price, total) {
   document.getElementById('episode-label').textContent =
     `${modeLabel} | Ep: ${episodeCount} | Step: ${currentStep} / ${activeData.length}`;
 
-  // CNN 信號（連續值）
+  // State 指標顯示
   const curRow = activeData[Math.min(currentStep, activeData.length - 1)];
-  const raw    = curRow ? curRow.pred_return_pct : 0;
-  const clamped = Math.max(CNN_MIN, Math.min(CNN_MAX, raw));
-  const badge   = document.getElementById('state-badge');
-  badge.textContent = `${clamped >= 0 ? '+' : ''}${clamped.toFixed(3)}%`;
-  badge.className   = `state-badge ${clamped > 0.3 ? 'sig-up' : clamped < -0.3 ? 'sig-down' : 'sig-neu'}`;
+  if (curRow) {
+    const rsiVal  = curRow.rsi  != null ? curRow.rsi.toFixed(1)  : '—';
+    const macdVal = curRow.macd != null ? curRow.macd.toFixed(2) : '—';
+    const rsiEl = document.getElementById('val-rsi');
+    rsiEl.textContent = rsiVal;
+    rsiEl.className   = `stat-value ${curRow.rsi > 70 ? 'up' : curRow.rsi < 30 ? 'down' : 'neu'}`;
+    document.getElementById('val-macd').textContent = macdVal;
+  }
 
   // 帳戶
   document.getElementById('val-price').textContent  = `$${p.toLocaleString('en', {maximumFractionDigits: 0})}`;
@@ -687,12 +711,10 @@ function drawChart() {
 
   const SHOW = 80;
   const showPrice  = chartOpts.priceLine && priceHistory.length >= 2;
-  const showPred   = chartOpts.predLine  && predHistory.length  >= 2;
   const showCandle = chartOpts.candles   && ohlcHistory.length  >= 2;
-  if (!showPrice && !showPred && !showCandle) return;
+  if (!showPrice && !showCandle) return;
 
   const recentPrice  = priceHistory.slice(-SHOW);
-  const recentPred   = predHistory.slice(-SHOW);
   const recentOhlc   = ohlcHistory.slice(-SHOW);
   const N = Math.max(recentPrice.length, recentOhlc.length);
   const offset = priceHistory.length > SHOW ? priceHistory.length - SHOW : 0;
@@ -700,7 +722,6 @@ function drawChart() {
   // 計算價格範圍
   let allP = [];
   if (showPrice)  allP = allP.concat(recentPrice);
-  if (showPred)   allP = allP.concat(recentPred);
   if (showCandle) recentOhlc.forEach(c => allP.push(c.h, c.l));
   if (allP.length < 2) return;
 
@@ -756,17 +777,6 @@ function drawChart() {
     ctx.stroke();
   }
 
-  // CNN 預測線（橘色虛線）
-  if (showPred) {
-    ctx.beginPath();
-    ctx.strokeStyle = '#f0883e';
-    ctx.lineWidth = 1.2;
-    ctx.setLineDash([4, 3]);
-    recentPred.forEach((p, i) => i === 0 ? ctx.moveTo(px(i), py(p)) : ctx.lineTo(px(i), py(p)));
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
   // 買賣標記
   ctx.font = '11px sans-serif';
   ctx.textAlign = 'center';
@@ -782,11 +792,10 @@ function drawChart() {
   const labels = [];
   if (showCandle) labels.push('K線');
   if (showPrice)  labels.push('Price');
-  if (showPred)   labels.push('Pred');
   ctx.fillStyle = '#8b949e';
   ctx.font = '11px Courier New';
   ctx.textAlign = 'left';
-  ctx.fillText(`BTC  ${labels.join(' + ')}  (最近 ${SHOW} 步)`, PAD.l, 14);
+  ctx.fillText(`${currentSymbol}  ${labels.join(' + ')}  (最近 ${SHOW} 步)`, PAD.l, 14);
 }
 
 function drawEquity() {
@@ -889,7 +898,6 @@ document.querySelectorAll('input[name="market"]').forEach(radio => {
 // ── 圖表切換 ──────────────────────────────────────────
 const chartBtnCfg = [
   { id: 'btn-price',  key: 'priceLine', cls: 'on-price'  },
-  { id: 'btn-pred',   key: 'predLine',  cls: 'on-pred'   },
   { id: 'btn-candle', key: 'candles',   cls: 'on-candle' },
 ];
 chartBtnCfg.forEach(({ id, key, cls }) => {
@@ -901,8 +909,29 @@ chartBtnCfg.forEach(({ id, key, cls }) => {
   });
 });
 
+// ── 標的切換 ──────────────────────────────────────────
+document.getElementById('symbol-btns').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-sym]');
+  if (!btn) return;
+  const sym = btn.dataset.sym;
+  if (sym === currentSymbol) return;
+
+  currentSymbol = sym;
+  document.querySelectorAll('#symbol-btns [data-sym]').forEach(b => {
+    b.className = `chart-btn${b.dataset.sym === sym ? ' on-price' : ''}`;
+  });
+
+  envReady = false;
+  statesData = [];
+  setStatus(`載入 ${sym} 資料...`);
+  dataReady = loadData();
+  await dataReady;
+  sendGameInfo();
+  resetEnv();
+});
+
 // ── 啟動 ──────────────────────────────────────────────
-loadData();
+let dataReady = loadData();
 </script>
 </body>
 </html>
