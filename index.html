@@ -632,7 +632,7 @@ function step(action) {
   }
 
   const row   = activeData[currentStep];
-  const price = row.price;
+  const price = row.close;
   priceHistory.push(price);
   ohlcHistory.push({ o: row.open ?? price, h: row.high ?? price, l: row.low ?? price, c: price });
 
@@ -791,7 +791,7 @@ window.addEventListener('message', (e) => {
 // ── UI 更新 ────────────────────────────────────────────
 
 function updateUI(price, total) {
-  const p   = price ?? activeData[0]?.price ?? 0;
+  const p   = price ?? activeData[0]?.close ?? 0;
   const tot = total ?? INITIAL_CAPITAL;
   const ret = (tot - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100;
 

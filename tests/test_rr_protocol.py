@@ -231,6 +231,15 @@ async def run_tests():
             else:
                 fail("RSI 範圍", str(rsi_val))
 
+            # 確認 price 欄位正常（不是 NaN）
+            price_ok = await page.evaluate(
+                "(function(){ var r = activeData[0]; return r && typeof r.close === 'number' && !isNaN(r.close); })()"
+            )
+            if price_ok:
+                ok("data[0].close 是有效數值（非 NaN）")
+            else:
+                fail("data[0].close 應為有效數值")
+
         except Exception as e:
             fail("初始 reward_state", str(e))
 
