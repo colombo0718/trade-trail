@@ -146,17 +146,19 @@
   }
   .pos-cell.filled { background: #f0883e; border-color: #f0883e; }
 
-  /* 季度篩選 */
-  .q-row { display: flex; align-items: center; gap: 4px; margin-top: 5px; }
-  .q-year { color: #8b949e; font-size: 10px; width: 28px; flex-shrink: 0; }
-  .q-btns { display: flex; gap: 3px; flex: 1; }
-  .q-btn {
-    flex: 1; padding: 2px 0; font-size: 10px; cursor: pointer;
+  /* 年份篩選 */
+  #year-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin-top: 6px;
+  }
+  .yr-btn {
+    padding: 2px 5px; font-size: 10px; cursor: pointer;
     border-radius: 3px; border: 1px solid #30363d;
     background: #21262d; color: #8b949e;
   }
-  .q-btn.q-active  { border-color: #58a6ff; color: #58a6ff; background: #0d1f2e; }
-  .q-btn.q-disabled { opacity: 0.3; cursor: not-allowed; }
+  .yr-btn.yr-active { border-color: #58a6ff; color: #58a6ff; background: #0d1f2e; }
 
   /* State 配置面板 */
   #state-dim-badge {
@@ -294,7 +296,7 @@
           <input type="radio" name="market" value="bear"> 熊市
         </label>
       </div>
-      <div id="quarter-grid"></div>
+      <div id="year-grid"></div>
     </div>
 
     <!-- 圖表選項 -->
@@ -421,7 +423,7 @@ let statesData       = [];
 let activeData       = [];   // 當前使用的資料段（依模式+市場篩選）
 let currentMode      = 'train';   // 'train' | 'validate'
 let currentMarket    = 'all';     // 'all' | 'bull' | 'bear'
-let selectedQuarters = new Set(); // e.g. "2024-Q2", "2025-Q3"; empty = no filter
+let selectedYears = new Set(); // e.g. "2020", "2021"; empty = 全部年份
 
 let currentSymbol = 'SPY';
 let isAccel       = false;
@@ -457,55 +459,34 @@ for (let i = 0; i < MAX_POSITION; i++) {
   posGrid.appendChild(cell);
 }
 
-// ── 季度工具 ──────────────────────────────────────────
-function getQKey(dateStr) {
-  const d = new Date(dateStr);
-  return `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
+// ── 年份工具 ──────────────────────────────────────────
+function getYear(dateStr) {
+  return String(new Date(dateStr).getFullYear());
 }
 
-function buildQuarterGrid() {
+function buildYearGrid() {
   const trainData = statesData.filter(d => d.phase === 'train' && d.date);
-  const available = new Set(trainData.map(d => getQKey(d.date)));
-  const years = [...new Set([...available].map(k => k.split('-')[0]))].sort();
+  const years = [...new Set(trainData.map(d => getYear(d.date)))].sort();
 
-  const container = document.getElementById('quarter-grid');
+  const container = document.getElementById('year-grid');
   container.innerHTML = '';
 
   years.forEach(yr => {
-    const row = document.createElement('div');
-    row.className = 'q-row';
-
-    const lbl = document.createElement('span');
-    lbl.className = 'q-year';
-    lbl.textContent = yr;
-    row.appendChild(lbl);
-
-    const btns = document.createElement('div');
-    btns.className = 'q-btns';
-    for (let q = 1; q <= 4; q++) {
-      const key = `${yr}-Q${q}`;
-      const btn = document.createElement('button');
-      btn.className = available.has(key) ? 'q-btn' : 'q-btn q-disabled';
-      btn.textContent = `Q${q}`;
-      btn.dataset.key = key;
-      btn.disabled = !available.has(key);
-      if (available.has(key)) {
-        btn.addEventListener('click', () => toggleQuarter(key, btn));
-      }
-      btns.appendChild(btn);
-    }
-    row.appendChild(btns);
-    container.appendChild(row);
+    const btn = document.createElement('button');
+    btn.className = 'yr-btn';
+    btn.textContent = yr;
+    btn.addEventListener('click', () => toggleYear(yr, btn));
+    container.appendChild(btn);
   });
 }
 
-function toggleQuarter(key, btn) {
-  if (selectedQuarters.has(key)) {
-    selectedQuarters.delete(key);
-    btn.classList.remove('q-active');
+function toggleYear(yr, btn) {
+  if (selectedYears.has(yr)) {
+    selectedYears.delete(yr);
+    btn.classList.remove('yr-active');
   } else {
-    selectedQuarters.add(key);
-    btn.classList.add('q-active');
+    selectedYears.add(yr);
+    btn.classList.add('yr-active');
   }
   buildActiveData();
   if (envReady) resetEnv();
@@ -518,7 +499,7 @@ function buildActiveData() {
       if (d.phase !== 'train') return false;
       if (currentMarket === 'bull' && d.market !== 'bull') return false;
       if (currentMarket === 'bear' && d.market !== 'bear') return false;
-      if (selectedQuarters.size > 0 && !selectedQuarters.has(getQKey(d.date))) return false;
+      if (selectedYears.size > 0 && !selectedYears.has(getYear(d.date))) return false;
       return true;
     });
   } else {
@@ -532,7 +513,7 @@ async function loadData() {
     const res  = await fetch(`data/${currentSymbol.toLowerCase()}.json`);
     const json = await res.json();
     statesData = json.data;
-    buildQuarterGrid();
+    buildYearGrid();
     buildActiveData();
     const trainCount = statesData.filter(d => d.phase === 'train').length;
     const testCount  = statesData.filter(d => d.phase === 'test').length;
