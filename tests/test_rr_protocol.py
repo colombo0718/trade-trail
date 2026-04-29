@@ -14,6 +14,7 @@ RR postMessage 協定整合測試
 
 import asyncio
 import json
+import sys
 import threading
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
@@ -21,12 +22,15 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 
 # ── 設定 ──────────────────────────────────────────────────
+LIVE_URL = "https://tradetrail.leaflune.org/"
 PORT     = 8765
 BASE_DIR = Path(__file__).parent.parent
-TIMEOUT  = 10_000   # ms
+TIMEOUT  = 15_000   # ms（live 站抓 JSON 可能慢一點）
 SESSION  = 42
 
-# ── 本地 HTTP 伺服器 ───────────────────────────────────────
+USE_LIVE = "--live" in sys.argv
+
+# ── 本地 HTTP 伺服器（local 模式才用）─────────────────────
 class QuietHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(BASE_DIR), **kwargs)
@@ -136,8 +140,14 @@ async def run_tests():
         detail = f": {reason}" if reason else ""
         print(f"  [FAIL] {name}{detail}")
 
-    server = start_server()
-    print(f"伺服器啟動：http://localhost:{PORT}/index.html\n")
+    if USE_LIVE:
+        target_url = LIVE_URL
+        server = None
+        print(f"目標：{target_url}（正式站）\n")
+    else:
+        server = start_server()
+        target_url = f"http://localhost:{PORT}/index.html"
+        print(f"目標：{target_url}（本地）\n")
 
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=False, slow_mo=80)
@@ -145,7 +155,7 @@ async def run_tests():
         page.on("pageerror", lambda e: print(f"  [JS ERROR] {e}"))
 
         await page.add_init_script(INIT_SCRIPT)
-        await page.goto(f"http://localhost:{PORT}/index.html")
+        await page.goto(target_url)
 
         # ── TEST 1：資料載入 ──────────────────────────────
         print("── TEST 1: 資料載入 ─────────────────────────────────")
@@ -321,10 +331,53 @@ async def run_tests():
         else:
             fail("episodeCount 應在 done 後遞增")
 
+        # ── TEST 8：State 配置切換 ────────────────────────
+        print("\n── TEST 8: State 配置切換（勾選多指標）──────────────")
+        await drain_queue(page)
+
+        # 勾選 KD %K（id=kd_k）
+        await page.evaluate("(function(){ document.getElementById('sc-kd_k').click(); })()")
+        await asyncio.sleep(0.5)
+
+        q = await drain_queue(page)
+        gi = next((m for m in q if m.get("type") == "gameInfo"), None)
+        if gi:
+            si = (gi.get("players") or [{}])[0].get("stateInfo", [])
+            # 應有：RSI + KD%K + 持倉格數 = 3 維
+            if len(si) == 3:
+                ok("勾選 KD%K 後 stateInfo 變為 3 維")
+            else:
+                fail("stateInfo 維度", f"期望 3，實際 {len(si)}")
+        else:
+            fail("State 切換後應送出 gameInfo")
+
+        rs = next((m for m in q if m.get("type") == "reward_state"), None)
+        if rs and len(rs.get("state", [])) == 3:
+            ok("state 向量長度同步更新為 3")
+        else:
+            fail("state 向量長度應為 3", str(rs))
+
+        # 取消 RSI（只剩 KD%K + 持倉 = 2 維）
+        await drain_queue(page)
+        await page.evaluate("(function(){ document.getElementById('sc-rsi').click(); })()")
+        await asyncio.sleep(0.5)
+
+        q = await drain_queue(page)
+        gi2 = next((m for m in q if m.get("type") == "gameInfo"), None)
+        if gi2:
+            si2 = (gi2.get("players") or [{}])[0].get("stateInfo", [])
+            if len(si2) == 2:
+                ok("取消 RSI 後 stateInfo 變為 2 維")
+            else:
+                fail("stateInfo 維度", f"期望 2，實際 {len(si2)}")
+        else:
+            fail("State 切換後應送出 gameInfo")
+
         await asyncio.sleep(1.5)
         await browser.close()
 
-    server.shutdown()
+    if server:
+        server.shutdown()
     print(f"\n{'='*50}")
     print(f"結果：{passed} PASS / {failed} FAIL")
     print(f"{'='*50}")

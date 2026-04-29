@@ -158,6 +158,42 @@
   .q-btn.q-active  { border-color: #58a6ff; color: #58a6ff; background: #0d1f2e; }
   .q-btn.q-disabled { opacity: 0.3; cursor: not-allowed; }
 
+  /* State 配置面板 */
+  #state-dim-badge {
+    float: right;
+    font-size: 10px;
+    background: #21262d;
+    border: 1px solid #30363d;
+    padding: 1px 6px;
+    border-radius: 8px;
+    color: #8b949e;
+    font-weight: normal;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  .state-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 5px;
+    font-size: 12px;
+  }
+  .state-check-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    color: #8b949e;
+    flex: 1;
+    user-select: none;
+  }
+  .state-check-label input[type="checkbox"] { accent-color: #58a6ff; cursor: pointer; }
+  .state-check-label.active { color: #e6edf3; }
+  .state-fixed-row { border-top: 1px solid #30363d; padding-top: 5px; margin-top: 2px; }
+  .state-fixed-label { color: #58a6ff; flex: 1; font-size: 12px; }
+  .state-val { color: #e6edf3; font-weight: bold; font-size: 12px; min-width: 44px; text-align: right; }
+  .state-val.dimmed { opacity: 0.35; }
+
   /* 進度條 */
   #progress-bar-wrap {
     background: #21262d;
@@ -270,17 +306,10 @@
       </div>
     </div>
 
-    <!-- State 指標 -->
+    <!-- State 配置 -->
     <div class="panel">
-      <div class="panel-title">State</div>
-      <div class="stat-row">
-        <span class="stat-label">RSI</span>
-        <span class="stat-value" id="val-rsi">—</span>
-      </div>
-      <div class="stat-row">
-        <span class="stat-label">MACD</span>
-        <span class="stat-value" id="val-macd">—</span>
-      </div>
+      <div class="panel-title">State <span id="state-dim-badge">2D</span></div>
+      <div id="state-config-list"></div>
     </div>
 
     <!-- 帳戶資訊 -->
@@ -344,6 +373,48 @@ const MAX_POSITION    = 10;
 const UNIT_FRACTION   = 1 / MAX_POSITION;
 const FEE_RATE        = 0.001;
 const SYMBOLS         = ['SPY', 'QQQ', 'AAPL', 'NVDA', 'TSLA'];
+
+// ── State 指標目錄 ─────────────────────────────────────
+// 每個指標定義 RR 需要的 {name, min, max, bin} 以及 getValue(row)
+// getValue 回傳值必須落在 [min, max] 內（會 clamp）
+const STATE_CATALOG = [
+  {
+    id: 'rsi', name: 'RSI', min: 0, max: 100, bin: 10,
+    getValue: r => r.rsi ?? 50,
+  },
+  {
+    id: 'kd_k', name: 'KD %K', min: 0, max: 100, bin: 10,
+    getValue: r => r.stoch_k ?? 50,
+  },
+  {
+    id: 'kd_d', name: 'KD %D', min: 0, max: 100, bin: 10,
+    getValue: r => r.stoch_d ?? 50,
+  },
+  {
+    id: 'macd', name: 'MACD', min: 0, max: 1, bin: 2,
+    // 1 = MACD 在 Signal 之上（多頭動能），0 = 空頭動能
+    getValue: r => ((r.macd ?? 0) >= (r.macd_signal ?? 0)) ? 1 : 0,
+  },
+  {
+    id: 'ma_bias', name: 'MA偏離%', min: -20, max: 20, bin: 8,
+    // (close - MA20) / MA20 × 100，反映價格偏離均線的幅度
+    getValue: r => r.ma20 ? (r.close - r.ma20) / r.ma20 * 100 : 0,
+  },
+  {
+    id: 'boll', name: 'Bollinger', min: 0, max: 1, bin: 5,
+    // %B = (close - lower) / (upper - lower)，0 = 觸下軌，1 = 觸上軌
+    getValue: r => {
+      const range = (r.boll_upper - r.boll_lower) || 1;
+      return (r.close - r.boll_lower) / range;
+    },
+  },
+];
+
+// 持倉格數永遠是 State 最後一維，不可取消勾選
+const POS_STATE = { name: '持倉格數', min: 0, max: MAX_POSITION, bin: MAX_POSITION };
+
+// 預設選中 RSI
+let selectedStateIds = new Set(['rsi']);
 
 // ── 環境狀態 ───────────────────────────────────────────
 let statesData       = [];
@@ -475,13 +546,15 @@ async function loadData() {
 }
 
 function sendGameInfo() {
+  const stateInfo = STATE_CATALOG
+    .filter(s => selectedStateIds.has(s.id))
+    .map(s => ({ name: s.name, min: s.min, max: s.max, bin: s.bin }));
+  stateInfo.push({ name: POS_STATE.name, min: POS_STATE.min, max: POS_STATE.max, bin: POS_STATE.bin });
+
   sendToRR({
     type: 'gameInfo',
     players: [{
-      stateInfo: [
-        { name: 'RSI', min: 0, max: 100, bin: 10 },
-        { name: '持倉格數', min: 0, max: MAX_POSITION, bin: MAX_POSITION },
-      ],
+      stateInfo,
       actionInfo: [{
         type: 'switch',
         name: ['買入', '持有', '賣出'],
@@ -508,9 +581,15 @@ function useDemoData() {
 // ── 環境核心函數 ───────────────────────────────────────
 
 function getStateVector() {
-  const row = activeData[Math.min(currentStep, activeData.length - 1)];
-  const rsi = row ? Math.max(0, Math.min(100, row.rsi ?? 50)) : 50;
-  return [rsi, position];
+  const row = activeData[Math.min(currentStep, activeData.length - 1)] || {};
+  const vec = STATE_CATALOG
+    .filter(s => selectedStateIds.has(s.id))
+    .map(s => {
+      const raw = s.getValue(row);
+      return Math.max(s.min, Math.min(s.max, raw));
+    });
+  vec.push(position);
+  return vec;
 }
 
 function getTotal(price) {
@@ -611,6 +690,79 @@ function step(action) {
   });
 }
 
+// ── State 配置 UI ──────────────────────────────────────
+
+function buildStatePanel() {
+  const container = document.getElementById('state-config-list');
+  container.innerHTML = '';
+
+  STATE_CATALOG.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'state-row';
+
+    const label = document.createElement('label');
+    label.className = 'state-check-label' + (selectedStateIds.has(s.id) ? ' active' : '');
+    label.htmlFor = `sc-${s.id}`;
+
+    const cb = document.createElement('input');
+    cb.type    = 'checkbox';
+    cb.id      = `sc-${s.id}`;
+    cb.checked = selectedStateIds.has(s.id);
+    cb.addEventListener('change', () => onStateToggle(s.id, cb.checked, label));
+
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = s.name;
+    label.append(cb, nameSpan);
+
+    const valSpan = document.createElement('span');
+    valSpan.className = 'state-val' + (selectedStateIds.has(s.id) ? '' : ' dimmed');
+    valSpan.id = `sval-${s.id}`;
+    valSpan.textContent = '—';
+
+    row.append(label, valSpan);
+    container.appendChild(row);
+  });
+
+  // 持倉格數（固定，不可取消）
+  const posRow = document.createElement('div');
+  posRow.className = 'state-row state-fixed-row';
+  const posLabel = document.createElement('span');
+  posLabel.className = 'state-fixed-label';
+  posLabel.textContent = '持倉格數';
+  const posVal = document.createElement('span');
+  posVal.className = 'state-val';
+  posVal.id = 'sval-pos';
+  posVal.textContent = '0';
+  posRow.append(posLabel, posVal);
+  container.appendChild(posRow);
+
+  updateStateDimBadge();
+}
+
+function onStateToggle(id, checked, label) {
+  if (checked) {
+    selectedStateIds.add(id);
+    label.classList.add('active');
+  } else {
+    selectedStateIds.delete(id);
+    label.classList.remove('active');
+  }
+  // 更新 val 欄位的 dimmed 狀態
+  const valEl = document.getElementById(`sval-${id}`);
+  if (valEl) valEl.classList.toggle('dimmed', !checked);
+
+  updateStateDimBadge();
+  if (envReady) {
+    sendGameInfo();
+    resetEnv();
+  }
+}
+
+function updateStateDimBadge() {
+  const dim = selectedStateIds.size + 1; // +1 持倉格數
+  document.getElementById('state-dim-badge').textContent = `${dim}D`;
+}
+
 // ── postMessage 通訊 ───────────────────────────────────
 
 function sendToRR(payload) {
@@ -650,15 +802,19 @@ function updateUI(price, total) {
   document.getElementById('episode-label').textContent =
     `${modeLabel} | Ep: ${episodeCount} | Step: ${currentStep} / ${activeData.length}`;
 
-  // State 指標顯示
+  // State 指標顯示（動態，依 selectedStateIds）
   const curRow = activeData[Math.min(currentStep, activeData.length - 1)];
   if (curRow) {
-    const rsiVal  = curRow.rsi  != null ? curRow.rsi.toFixed(1)  : '—';
-    const macdVal = curRow.macd != null ? curRow.macd.toFixed(2) : '—';
-    const rsiEl = document.getElementById('val-rsi');
-    rsiEl.textContent = rsiVal;
-    rsiEl.className   = `stat-value ${curRow.rsi > 70 ? 'up' : curRow.rsi < 30 ? 'down' : 'neu'}`;
-    document.getElementById('val-macd').textContent = macdVal;
+    STATE_CATALOG.forEach(s => {
+      const el = document.getElementById(`sval-${s.id}`);
+      if (!el) return;
+      const raw = s.getValue(curRow);
+      const val = Math.max(s.min, Math.min(s.max, raw));
+      // 顯示格式：MACD 是 0/1，其他保留一位小數
+      el.textContent = s.id === 'macd' ? (val === 1 ? '↑多' : '↓空') : val.toFixed(1);
+    });
+    const posEl = document.getElementById('sval-pos');
+    if (posEl) posEl.textContent = position;
   }
 
   // 帳戶
@@ -931,6 +1087,7 @@ document.getElementById('symbol-btns').addEventListener('click', async (e) => {
 });
 
 // ── 啟動 ──────────────────────────────────────────────
+buildStatePanel();
 let dataReady = loadData();
 </script>
 </body>
