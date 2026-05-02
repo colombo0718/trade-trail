@@ -159,6 +159,19 @@
     background: #21262d; color: #8b949e;
   }
   .yr-btn.yr-active { border-color: #58a6ff; color: #58a6ff; background: #0d1f2e; }
+  #year-quick {
+    display: flex; gap: 4px; margin-top: 6px;
+  }
+  .yr-quick-btn {
+    padding: 2px 6px; font-size: 10px; cursor: pointer;
+    border-radius: 3px; border: 1px solid #30363d;
+    background: #21262d; color: #8b949e;
+  }
+  .yr-quick-btn:hover { border-color: #8b949e; color: #c9d1d9; }
+  #step-count {
+    margin-top: 5px; font-size: 10px; color: #8b949e; text-align: right;
+  }
+  #step-count span { color: #58a6ff; font-weight: bold; }
 
   /* State 配置面板 */
   #state-dim-badge {
@@ -323,7 +336,13 @@
           <input type="radio" name="market" value="bear"> 熊市
         </label>
       </div>
+      <div id="year-quick">
+        <button class="yr-quick-btn" onclick="setYearQuick('all')">全選</button>
+        <button class="yr-quick-btn" onclick="setYearQuick('3y')">近3年</button>
+        <button class="yr-quick-btn" onclick="setYearQuick('1y')">近1年</button>
+      </div>
       <div id="year-grid"></div>
+      <div id="step-count"></div>
     </details>
 
     <!-- 圖表選項 -->
@@ -532,6 +551,44 @@ function buildActiveData() {
   } else {
     activeData = statesData.filter(d => d.phase === 'test');
   }
+  updateStepCount();
+}
+
+function updateStepCount() {
+  const el = document.getElementById('step-count');
+  if (!el) return;
+  if (currentMode !== 'train') { el.textContent = ''; return; }
+  el.innerHTML = `可用步數：<span>${activeData.length}</span>`;
+}
+
+function setYearQuick(type) {
+  const trainData = statesData.filter(d => d.phase === 'train' && d.date);
+  const allYears = [...new Set(trainData.map(d => getYear(d.date)))].sort();
+  if (allYears.length === 0) return;
+
+  const maxYear = parseInt(allYears[allYears.length - 1]);
+  let targetYears;
+  if (type === 'all') {
+    targetYears = new Set();  // empty = 全選
+  } else if (type === '3y') {
+    targetYears = new Set(allYears.filter(y => parseInt(y) >= maxYear - 2));
+  } else if (type === '1y') {
+    targetYears = new Set(allYears.filter(y => parseInt(y) >= maxYear));
+  }
+
+  selectedYears = targetYears;
+
+  // 更新按鈕視覺
+  document.querySelectorAll('.yr-btn').forEach(btn => {
+    if (selectedYears.size > 0 && selectedYears.has(btn.textContent)) {
+      btn.classList.add('yr-active');
+    } else {
+      btn.classList.remove('yr-active');
+    }
+  });
+
+  buildActiveData();
+  if (envReady) resetEnv();
 }
 
 // ── 載入 btc_states.json ───────────────────────────────
