@@ -17,6 +17,38 @@ RR 正式版：https://reinroom.leaflune.org/
 
 ---
 
+## 架構概覽
+
+```
+TradeTrail/
+├── index.html          # 前端主體，唯一的 HTML 檔案
+│                         RR postMessage 協定收發、環境邏輯、Canvas 繪圖
+├── data/               # 靜態 JSON 資料（yfinance 預處理結果）
+│   ├── spy.json        # 2,785 筆（2533 train + 252 test）
+│   ├── qqq.json
+│   ├── aapl.json
+│   ├── nvda.json
+│   └── tsla.json
+├── scripts/
+│   └── fetch_data.py   # 資料預處理腳本，執行一次輸出 data/*.json
+├── tests/
+│   └── test_rr_protocol.py  # Playwright 協定驗證，24 PASS
+├── PROJECT.md
+├── CLAUDE.md
+├── TODO.md
+└── CHANGELOG.md
+```
+
+**關鍵檔案說明：**
+
+| 檔案 | 作用 |
+|------|------|
+| `index.html` | 整個前端在這一支檔案裡；STATE_CATALOG、sendGameInfo、getStateVector、Canvas 繪圖全在此 |
+| `scripts/fetch_data.py` | 執行一次即可；SYMBOLS / START_DATE / TEST_BARS 在頂部設定區調整 |
+| `tests/test_rr_protocol.py` | 用 `--live` flag 可直接測正式站；`add_init_script` 注入假父框架攔截 postMessage |
+
+---
+
 ## 核心流程
 
 ```
@@ -138,6 +170,28 @@ reward_state：{ state, reward, done, sessionId, ticks }
 ## 當前起點
 
 `index.html` 來自 RR 的 `games/btc_trading.html`——BTC 歷史資料的 RL 交易環境原型，元智大學課程專題成果。原版採用 CNN+RL 架構，TT 改以技術指標取代 CNN 預測訊號，動作空間維持離散三選項。這是 TT 的開發基礎，後續在此擴充配置化能力與多標的支援。
+
+---
+
+## 已知坑與解法
+
+**1. row.price → row.close（2026-05-01 修）**
+- 問題：舊版 BTC 資料有 `price` 欄位，新 JSON 格式改用 `close`。`step()` 裡若寫 `row.price` 會拿到 `undefined`，導致圖表全為 NaN，但 K 線完全不畫也不報錯
+- 解法：新資料一律用 `row.close`
+- 教訓：Playwright 測試只驗 postMessage 格式，不驗畫面數值，這類 silent NaN 要另外加斷言
+
+**2. resetEnv() race condition（2026-04-26 修）**
+- 問題：`questInfo` 收到後立即呼叫 `resetEnv()`，但 `loadData()` 是 async，資料還沒載完就送出第一個 `reward_state`；RR 回傳 `action` 時 `envReady` 仍為 false，`step()` 直接 return，RR 永遠等不到下一個 `reward_state` → 卡死
+- 解法：`let dataReady = loadData()`，questInfo handler 改為 `dataReady.then(() => resetEnv())`
+- 教訓：postMessage 協定裡環境必須在資料就緒後才送出第一個 reward_state，否則 RR 會卡死
+
+**3. details.open vs style.display（2026-05-01）**
+- 問題：MARKET FILTER 面板改為 `<details>` 後，驗證模式切換原本用 `style.display = 'none'` 控制顯示，對 `<details>` 無效（display 跟 open 是不同機制）
+- 解法：改用 `element.open = false / true`
+
+**4. Cloudflare Error 1014 CNAME Cross-User Banned（2026-05-01）**
+- 問題：`tradetrail.leaflune.org` 曾設過 `trade-trail.leaflune.org`，改名後舊 CNAME 記錄殘留，Cloudflare 跨帳號 CNAME 被 ban
+- 解法：到 Cloudflare DNS 把舊記錄刪掉，再從 Pages 的 Custom domain 重新設定
 
 ---
 
